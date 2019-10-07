@@ -13,18 +13,19 @@
 #define SYNC_WORD_1     0xA1
 #define DEBUG 1
 
-unsigned long counter_2 = 0;
 uint8_t to_encoder[LENGTH_OF_BUFFER+100];
 uint8_t imu_buffer[18];
 uint8_t imu2_buffer[18];
 uint8_t imu3_buffer[18];
+uint8_t GPS_buffer[66];
+uint8_t tmp, prev_tmp, GPS_data[66];
+unsigned long counter=0, counter_imugps=0, counter_2=0, gps_time=0, show_time;
 unsigned int counter_frame=0;
-bool update_imu=true;
+bool lock=false, update_imu=true;
 const float G = 9.807f;
 float accel_range_mss = 24.0f*G;
 const float D2R = M_PI / 180.0f;
 float gyro_range_rads = 2000.0f*D2R;
-
 
 //LSM9DS1
 LSM9DS1 imu;
@@ -60,7 +61,7 @@ void setup(){
 
 
 #if DEBUG
-  Serial.println("Starting...");
+    Serial.println("Starting...");
 #endif
 
 #if DEBUG
@@ -69,13 +70,15 @@ void setup(){
         while(1);
     }
     int status;
+    
     while(!Serial){
-        status = accel.begin();
+        status = accel.begin();    
         if(status < 0){
             Serial.println("Failed to communicate with BMI088 accelerometer.");
             Serial.println(status);
             while(1){}
         }
+        
         status = gyro.begin();
         if(status < 0){
             Serial.println("Failed to communicate with BMI088 gyroscope.");
@@ -88,7 +91,10 @@ void setup(){
         Serial.println("Connection to ICM20649 could not be established. Check wiring.");
     }
 #endif
-
+    imu.begin();
+    accel.begin();
+    gyro.begin();
+    imu3.initialize(ACCEL_RANGE_30G, GYRO_RANGE_4000DPS);
     // Set sync words. Must use auto-corr to find proper ones, not 0xEB90
     to_encoder[0*(2+18)] = SYNC_WORD_0;
     to_encoder[0*(2+18)+1] = SYNC_WORD_1;
@@ -101,7 +107,7 @@ void setup(){
     to_encoder[4*(2+18)] = SYNC_WORD_0;
     to_encoder[4*(2+18)+1] = 0x04;
 
-    //Serial.begin(115200);
+    Serial1.begin(115200);
 
     //GPIOC_PDDR |= (uint32_t)0xFF; // Set all lower 8 pins to output (to encoder)
     pinMode(15, OUTPUT);
@@ -171,20 +177,20 @@ void loop(){
         float gyroZ = ((gyro.getGyroZ_rads()*32768.0f)/gyro_range_rads);
         
         //Accelerometer
-        imu2_buffer[0] = ((int)accelX&0xFF00)>>8;
-        imu2_buffer[1] = ((int)accelX)&0xFF;
-        imu2_buffer[2] = ((int)accelY&0xFF00)>>8;
-        imu2_buffer[3] = ((int)accelY)&0xFF;
-        imu2_buffer[4] = ((int)accelZ&0xFF00)>>8;
-        imu2_buffer[5] = ((int)accelZ)&0xFF;
+        imu2_buffer[0] = ((uint8_t)accelX&0xFF00)>>8;
+        imu2_buffer[1] = ((uint8_t)accelX)&0xFF;
+        imu2_buffer[2] = ((uint8_t)accelY&0xFF00)>>8;
+        imu2_buffer[3] = ((uint8_t)accelY)&0xFF;
+        imu2_buffer[4] = ((uint8_t)accelZ&0xFF00)>>8;
+        imu2_buffer[5] = ((uint8_t)accelZ)&0xFF;
 
         //Gyro
-        imu2_buffer[6] = ((int)gyroX&0xFF00)>>8;
-        imu2_buffer[7] = ((int)gyroX)&0xFF;
-        imu2_buffer[8] = ((int)gyroY&0xFF00)>>8;
-        imu2_buffer[9] = ((int)gyroY)&0xFF;
-        imu2_buffer[10] = ((int)gyroZ&0xFF00)>>8;
-        imu2_buffer[11] = ((int)gyroZ)&0xFF;
+        imu2_buffer[6] = ((uint8_t)gyroX&0xFF00)>>8;
+        imu2_buffer[7] = ((uint8_t)gyroX)&0xFF;
+        imu2_buffer[8] = ((uint8_t)gyroY&0xFF00)>>8;
+        imu2_buffer[9] = ((uint8_t)gyroY)&0xFF;
+        imu2_buffer[10] = ((uint8_t)gyroZ&0xFF00)>>8;
+        imu2_buffer[11] = ((uint8_t)gyroZ)&0xFF;
 
         //non-exsistent magnetometer
         imu2_buffer[12] = 0;
@@ -222,11 +228,71 @@ void loop(){
         imu3_buffer[15] = 0;
         imu3_buffer[16] = 0;
         imu3_buffer[17] = 0;
+    }
     
+    while(Serial1.available()){
+        if(counter_imugps){
+#if DEBUG
+            Serial.print("counter-thingy: ");
+            Serial.println(counter_imugps);
+#endif
+            counter_imugps = 0;
+        }
+
+        prev_tmp = tmp;
+        tmp = Serial1.read();
+        if(lock){
+            counter++;
+
+            if(counter == 66){
+                counter = 0;
+                update_GPS_data();
+            }
+
+            GPS_data[counter] = tmp;
+
+            if((counter == 0) && (tmp != 0xA0)){
+                lock = false;
+#if DEBUG
+                Serial.print("lost lock 0: 0x");
+                Serial.println(tmp, HEX);
+#endif
+            }
+
+            if((counter == 1) && (tmp != 0xA1)){
+                lock = false;
+#if DEBUG
+                Serial.print("Lost lock 1: 0x");
+                Serial.println(tmp, HEX);
+#endif
+            }
+        }
+        else{
+            if((prev_tmp == 0xA0)&&(tmp == 0xA1)){
+                lock = true;
+                counter = 1;
+                Serial.println("Got lock!");
+            }
+        }
+    }
+    if(millis()-show_time > 100){
+        show_time = millis();
+      // this condition is satisfied when i tested with serial print here
+      
+#if DEBUG
+//        update_imu=true;
+//        Serial.print(show_time);
+//        Serial.print("\t");
+//        Serial.print(counter_2);
+//        Serial.print("\t");
+//        Serial.print(Serial1.available());
+//        Serial.println();
+#endif
     }
 }
 
 void irq_encoder(void){
+    Serial.print("HER");
     int i;
     counter_frame++;
     if(counter_frame >= LENGTH_OF_BUFFER){
@@ -234,35 +300,94 @@ void irq_encoder(void){
         update_imu = true;
     }
 
-    GPIOC_PDOR = (uint32_t)((GPIOC_PDOR&0xFFFFFF00) | to_encoder[counter_frame]);
+    GPIOC_PDOR = (uint32_t)((GPIOC_PDOR&0xFFFFFF00) | to_encoder[counter_frame]);// Output next byte to encoder
     
-    if(counter_frame%20 == 0){
-        for(i = 1; i < 18; i++){
-            to_encoder[2+counter_frame+i] = imu_buffer[i];
+    if(counter_frame == 0){
+        for(i = 0; i < 18; i++){
+            to_encoder[2+i] = GPS_buffer[i];
         }
     }
 
-    if(counter_frame%40 == 0){
-        for(i = 1; i < 18; i++){
-            to_encoder[2+counter_frame+i] = imu2_buffer[i];
+    if(counter_frame == 19){
+        for(i = 0; i < 18; i++){
+            to_encoder[3+counter_frame+i] = imu_buffer[i];
         }
     }
 
-    if(counter_frame%60 == 0){
-        for(i = 1; i < 18; i++){
-            to_encoder[2+counter_frame+i] = imu3_buffer[i];
+    if(counter_frame == 39){
+        for(i = 0; i < 18; i++){
+            to_encoder[3+counter_frame+i] = imu2_buffer[i];
         }
-        //update_imu = true;
+        Serial.println("BMI");
+        Serial.print(to_encoder[41]);
+        Serial.print(",");
+        Serial.print(to_encoder[42]);
+        Serial.print(",");        
+        Serial.print(to_encoder[43]);
+        Serial.print(",");        
+        Serial.print(to_encoder[44]);
+        Serial.print(",");        
+        Serial.print(to_encoder[45]);
+        Serial.print(",");        
+        Serial.print(to_encoder[46]);
+        Serial.print(",");        
+        Serial.print(to_encoder[47]);
+        Serial.print(",");        
+        Serial.print(to_encoder[48]);
+        Serial.print(",");        
+        Serial.print(to_encoder[49]);
+        Serial.print(",");        
+        Serial.print(to_encoder[50]);
+        Serial.print(",");        
+        Serial.print(to_encoder[51]);
+        Serial.print(",");        
+        Serial.print(to_encoder[52]);
+        Serial.println(",");        
+
     }
-    if(counter_frame%80 == 0){
-      for(i = 1; i <18; i++){
-        to_encoder[2+counter_frame+i] = 0;
-      }
+
+    if(counter_frame == 59){
+        for(i = 0; i < 18; i++){
+            to_encoder[3+counter_frame+i] = imu3_buffer[i];
+        }
     }
+    update_imu = true;
+}
+
+void update_GPS_data(){
+    GPS_buffer[0] = ((GPS_data[3+2]&0x01 << 7) | (GPS_data[3+3]&0x7f));
+    if(millis()-gps_time > 200){
+        gps_time = millis();
+        GPS_buffer[0] |= 64;
+    }
+    // Latitude
+    GPS_buffer[1] = GPS_data[3+10];
+    GPS_buffer[2] = GPS_data[3+11];
+    GPS_buffer[3] = GPS_data[3+12];
+    GPS_buffer[4] = GPS_data[3+13];
+
+    // Longitude
+    GPS_buffer[5] = GPS_data[3+14];
+    GPS_buffer[6] = GPS_data[3+15];
+    GPS_buffer[7] = GPS_data[3+16];
+    GPS_buffer[8] = GPS_data[3+17];
+
+    // Altitude (if GPS_data[3+22]&0x80, then the unsigned integer is indeed negative
+    GPS_buffer[9] = ((GPS_data[3+22]&0x80) | (GPS_data[3+23]&0x7F)); 
+    GPS_buffer[10] = GPS_data[3+24];
+    GPS_buffer[11] = GPS_data[3+25];
+
+    int32_t EXEF_X_Vel_SINT = (GPS_data[3+48] << 24) + (GPS_data[3+49] << 16) + (GPS_data[3+50] << 8) + (GPS_data[3+51] << 0);
+
+    int32_t EXEF_Y_Vel_SINT = (GPS_data[3+52] << 24) + (GPS_data[3+53] << 16) + (GPS_data[3+54] << 8) + (GPS_data[3+55] << 0);
+
+    int32_t EXEF_Z_Vel_SINT = (GPS_data[3+56] << 24) + (GPS_data[3+57] << 16) + (GPS_data[3+58] << 8) + (GPS_data[3+59] << 0);
+
+    uint32_t Total_Vel = sqrt(EXEF_X_Vel_SINT*EXEF_X_Vel_SINT + EXEF_Y_Vel_SINT*EXEF_Y_Vel_SINT + EXEF_Z_Vel_SINT*EXEF_Z_Vel_SINT);
+
+    GPS_buffer[12] = (Total_Vel&0xFF0000) >> 16; // discard higher values, as they shouldn't exist
+    GPS_buffer[13] = (Total_Vel&0xFF00) >> 8;
+    GPS_buffer[14] = Total_Vel&0xFF; // LSB
     
-    Serial.print("counter_frame: ");
-    Serial.println(counter_frame);
-    Serial.print("to_encoder[counter_frame]: ");
-    Serial.println(to_encoder[counter_frame]);
     
 }

@@ -211,12 +211,40 @@ void irq_encoder(void) {
       to_encoder[2+counter_frame+i] = imu_buffer[i];
     update_imu=true;
   }
-  
-  Serial.print("counter_frame: ");
   Serial.println(counter_frame);
-  Serial.print("to_encoder[counter_frame]: ");
-  Serial.println(to_encoder[counter_frame]);
-
+  /*
+  Serial.print("TEST");
+    Serial.print(GPS_buffer[0]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[1]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[2]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[3]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[4]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[5]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[6]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[7]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[8]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[9]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[10]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[11]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[12]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[13]);
+    Serial.print(", ");
+    Serial.print(GPS_buffer[14]);
+    Serial.println(", ");
+    */
   counter_2++;
   //Serial.println(counter_2++);
 }
