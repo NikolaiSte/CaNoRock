@@ -1,0 +1,28 @@
+{
+    "name": "ICM20649", 
+    "version": "0.0.1", 
+    "keywords": [
+        "sensors,imu"
+    ], 
+    "description": "Library to communicate to InvenSense ICM20649 using I2C", 
+    "frameworks": [
+        "arduino"
+    ], 
+    "platforms": [
+        "*"
+    ], 
+    "authors": [
+        {
+            "email": null, 
+            "url": null, 
+            "maintainer": true, 
+            "name": "Ketil Røed"
+        } 
+       
+    ], 
+    "repository": {
+        "type": "git", 
+        "url": "https://github.uio.no/ketilroe/icm20649.git"
+    }, 
+    "id": 1
+}

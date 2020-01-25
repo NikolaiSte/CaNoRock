@@ -1,0 +1,9 @@
+name=ICM20649
+version=0.0.1
+author= Ketil Røed, University of Oslo
+maintainer=Ketil Røed
+sentence=A driver library for the ICM20649.
+paragraph=Communicates with the ICM20649 over I2C
+category=Sensors
+architectures=*
+includes=ICM20649.h
